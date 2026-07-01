@@ -16,8 +16,8 @@ N_SENSORS  = 8;       % sensors → 16 columns (time, emg, time, emg, ...)
 
 % Flatline detection
 FLAT_WIN   = 500;     % sliding window width (samples)  ~0.23 s at 2148 Hz
-FLAT_VAR   = 1e-7;    % variance threshold (mV²) below which = flatline
-FLAT_MIN_S = 0.5;     % minimum flatline duration to report (seconds)
+FLAT_VAR   = 3e-5;    % variance threshold (mV²) below which = flatline
+FLAT_MIN_S = 1;     % minimum flatline duration to report (seconds)
 
 % Timestamp gap
 GAP_FACTOR = 3;       % flag if dt > GAP_FACTOR × median(dt)
@@ -26,9 +26,18 @@ GAP_FACTOR = 3;       % flag if dt > GAP_FACTOR × median(dt)
 SNR_WIN_S  = 0.5;     % window size for windowed-RMS noise floor (seconds)
 SNR_PCT    = 5;       % use bottom N-th percentile of windowed RMS as noise floor
 
+% CSV column order (fixed by hardware):
+%   1=Avanti3(L TA)  2=Avanti2(R GM)  3=Mini5(R RF)   4=Avanti4(L GM)
+%   5=Mini7(L RF)    6=Mini8(L VL)    7=Avanti1(R TA) 8=Mini6(R VL)
 sensor_names = { ...
-    'Avanti3(63660)', 'Avanti2(63168)', 'Mini5(59499)',  'Avanti4(63404)', ...
-    'Mini7(59434)',   'Mini8(60403)',   'Avanti1(63629)', 'Mini6(59521)' };
+    'Avanti3(L TA)', 'Avanti2(R GM)', 'Mini5(R RF)',  'Avanti4(L GM)', ...
+    'Mini7(L RF)',   'Mini8(L VL)',   'Avanti1(R TA)', 'Mini6(R VL)' };
+
+% ── Display order ──────────────────────────────────────────────────────────
+% Indices into sensor_names (1~8). Change this to reorder figures and tables.
+% Example – group by side (L then R):
+channel_order = [1, 4, 5, 6,  7, 2, 3, 8];  % L TA, L GM, L RF, L VL, R TA, R GM, R RF, R VL
+% channel_order = 1:N_SENSORS;  % default: same as CSV column order
 
 %% ── Load data ───────────────────────────────────────────────────────────────
 fprintf('=== Loading EMG data ===\n');
@@ -50,6 +59,57 @@ for k = 1:numel(trial_files)
         size(emg_mat,1), fs, t_vec(end)-t_vec(1));
 end
 n_trials = numel(T);
+
+%% ── FLAT_VAR Diagnostic ─────────────────────────────────────────────────
+% 슬라이딩 분산의 분포를 보고 FLAT_VAR의 적절한 값을 확인한다.
+% 히스토그램에서 두 봉우리 사이 골(valley)이 threshold 후보.
+fprintf('\n=== FLAT_VAR Diagnostic ===\n');
+
+all_logvar = [];
+for k = 1:n_trials
+    for ch = 1:N_SENSORS
+        v = movvar(T(k).emg(:, ch), FLAT_WIN);
+        v = v(v > 0);
+        all_logvar = [all_logvar; log10(v)]; %#ok<AGROW>
+    end
+end
+
+[counts, edges] = histcounts(all_logvar, 300, 'Normalization', 'probability');
+centers = (edges(1:end-1) + edges(2:end)) / 2;
+
+% valley 자동 탐색: smoothed histogram에서 좌측 두 봉우리 사이 최솟값
+smoothed = smoothdata(counts, 'gaussian', 15);
+[~, peak_locs] = findpeaks(smoothed, 'MinPeakProminence', max(smoothed) * 0.05, ...
+                            'SortStr', 'descend');
+peak_locs = sort(peak_locs(1:min(2, end)));
+
+fig_diag = figure('Name', 'FLAT_VAR Diagnostic', 'NumberTitle', 'off', ...
+                  'Position', [100, 100, 860, 420]);
+bar(centers, counts, 1, 'FaceColor', [0.4 0.6 0.8], 'EdgeColor', 'none');
+hold on;
+plot(centers, smoothed, 'k-', 'LineWidth', 1.2);
+xline(log10(FLAT_VAR), 'r-', sprintf('현재 FLAT\\_VAR = 10^{%.0f}', log10(FLAT_VAR)), ...
+      'LineWidth', 2, 'LabelVerticalAlignment', 'bottom', 'FontSize', 9);
+
+if numel(peak_locs) >= 2
+    [~, vi] = min(smoothed(peak_locs(1):peak_locs(2)));
+    valley_idx  = peak_locs(1) + vi - 1;
+    suggested   = 10^centers(valley_idx);
+    xline(centers(valley_idx), 'g--', ...
+          sprintf('추천 FLAT\\_VAR = 10^{%.1f}', centers(valley_idx)), ...
+          'LineWidth', 1.5, 'LabelVerticalAlignment', 'top', 'FontSize', 9);
+    fprintf('  현재   FLAT_VAR = %.2e mV²  (10^%.1f)\n', FLAT_VAR, log10(FLAT_VAR));
+    fprintf('  추천   FLAT_VAR = %.2e mV²  (10^%.1f)\n', suggested, log10(suggested));
+    fprintf('  → Configuration의 FLAT_VAR를 %.0e 로 바꿔보세요.\n', suggested);
+else
+    fprintf('  두 봉우리를 찾지 못했습니다.\n');
+    fprintf('  → Dead zone이 없거나, FLAT_WIN이 너무 작을 수 있습니다.\n');
+end
+hold off;
+xlabel('log_{10}(sliding variance, mV²)');
+ylabel('Probability');
+title(sprintf('슬라이딩 분산 분포  (FLAT\\_WIN = %d samples, 전 채널 × 트라이얼 합산)', FLAT_WIN));
+grid on; box off;
 
 %% ═══════════════════════════════════════════════════════════════════════════
 %  1.  DATA INTEGRITY
@@ -129,15 +189,16 @@ end
 %% ── Figure 1: Raw signals ───────────────────────────────────────────────
 fig1 = figure('Name', 'Raw EMG – All Trials', 'NumberTitle', 'off', ...
               'Position', [50, 50, 1600, 960]);
-for ch = 1:N_SENSORS
+for idx = 1:N_SENSORS
+    ch = channel_order(idx);
     for k = 1:n_trials
-        ax = subplot(N_SENSORS, n_trials, (ch-1)*n_trials + k);
+        ax = subplot(N_SENSORS, n_trials, (idx-1)*n_trials + k);
         plot(T(k).time, T(k).emg(:, ch), 'LineWidth', 0.2, 'Color', [0.2 0.4 0.8]);
-        if ch == 1,      title(trial_labels{k}, 'FontWeight', 'bold'); end
-        if k == 1,       ylabel(sensor_names{ch}, 'FontSize', 7, 'Interpreter', 'none'); end
-        if ch == N_SENSORS, xlabel('Time (s)', 'FontSize', 7); end
+        if idx == 1,           title(trial_labels{k}, 'FontWeight', 'bold'); end
+        if k == 1,             ylabel(sensor_names{ch}, 'FontSize', 10, 'Interpreter', 'none'); end
+        if idx == N_SENSORS,   xlabel('Time (s)', 'FontSize', 7); end
         xlim([T(k).time(1), T(k).time(end)]);
-        set(ax, 'FontSize', 6);
+        % set(ax, 'FontSize', 6);
         box off;
     end
 end
@@ -163,7 +224,8 @@ fprintf('%s\n', hdr);
 fprintf('  %s\n', repmat('-', 1, 65));
 
 cv_vals = std(rms_vals, 0, 2) ./ mean(rms_vals, 2) * 100;
-for ch = 1:N_SENSORS
+for idx = 1:N_SENSORS
+    ch = channel_order(idx);
     row = sprintf('  %-20s', sensor_names{ch});
     for k = 1:n_trials; row = [row, sprintf(' %10.5f', rms_vals(ch,k))]; end %#ok<AGROW>
     flag = '';
@@ -175,18 +237,18 @@ end
 %% ── Figure 2: Cross-trial RMS comparison ────────────────────────────────
 fig2 = figure('Name', 'Cross-trial RMS Comparison', 'NumberTitle', 'off', ...
               'Position', [50, 50, 960, 520]);
-b = bar(rms_vals');
+bar(rms_vals(channel_order, :)'*1000);
 set(gca, 'XTick', 1:n_trials, 'XTickLabel', trial_labels);
-legend(sensor_names, 'Location', 'northeastoutside', 'FontSize', 8, 'Interpreter', 'none');
-xlabel('Trial');  ylabel('RMS (mV)');
-title('Cross-trial EMG RMS (higher = stronger signal)');
+legend(sensor_names(channel_order), 'Location', 'northeastoutside', 'FontSize', 8, 'Interpreter', 'none');
+xlabel('Trial');  ylabel('RMS (uV)');
+title('Cross-trial EMG RMS');
 grid on;  box off;
 
 %% ── Figure 3: CV across trials ───────────────────────────────────────────
 fig3 = figure('Name', 'Cross-trial CV', 'NumberTitle', 'off', ...
               'Position', [50, 50, 700, 420]);
-barh(cv_vals, 'FaceColor', [0.3 0.6 0.9]);
-set(gca, 'YTick', 1:N_SENSORS, 'YTickLabel', sensor_names);
+barh(cv_vals(channel_order), 'FaceColor', [0.3 0.6 0.9]);
+set(gca, 'YTick', 1:N_SENSORS, 'YTickLabel', sensor_names(channel_order));
 xline(30, 'r--', 'CV=30%', 'LabelVerticalAlignment', 'bottom');
 xlabel('Coefficient of Variation (%)');
 title('Cross-trial RMS Variability per Channel');
@@ -225,7 +287,8 @@ hdr = sprintf('  %-20s', 'Channel');
 for k = 1:n_trials; hdr = [hdr, sprintf(' %12s', trial_labels{k})]; end %#ok<AGROW>
 fprintf('%s\n', hdr);
 fprintf('  %s\n', repmat('-', 1, 60));
-for ch = 1:N_SENSORS
+for idx = 1:N_SENSORS
+    ch = channel_order(idx);
     row = sprintf('  %-20s', sensor_names{ch});
     for k = 1:n_trials
         val = snr_vals(ch, k);
@@ -244,9 +307,9 @@ fprintf('  (!) = SNR < 6 dB (signal likely dominated by noise)\n');
 %% ── Figure 4: SNR comparison ─────────────────────────────────────────────
 fig4 = figure('Name', 'SNR per Channel × Trial', 'NumberTitle', 'off', ...
               'Position', [50, 50, 960, 520]);
-bar(snr_vals');
+bar(snr_vals(channel_order, :)');
 set(gca, 'XTick', 1:n_trials, 'XTickLabel', trial_labels);
-legend(sensor_names, 'Location', 'northeastoutside', 'FontSize', 8, 'Interpreter', 'none');
+legend(sensor_names(channel_order), 'Location', 'northeastoutside', 'FontSize', 8, 'Interpreter', 'none');
 yline(6,  'r--', '6 dB',  'LabelVerticalAlignment', 'bottom');
 yline(20, 'g--', '20 dB', 'LabelVerticalAlignment', 'bottom');
 xlabel('Trial');  ylabel('SNR (dB)');
@@ -260,12 +323,13 @@ for k = 1:n_trials
                  'NumberTitle', 'off', 'Position', [50+k*30, 50+k*30, 1200, 600]);
     win_samp = round(SNR_WIN_S * T(k).fs);
     hold on;
-    for ch = 1:N_SENSORS
-        sig     = T(k).emg(:, ch);
-        wr      = sqrt(movmean(sig.^2, win_samp, 'omitnan'));
-        ds      = max(1, round(numel(wr)/4000));  % downsample for plotting speed
+    for idx = 1:N_SENSORS
+        ch  = channel_order(idx);
+        sig = T(k).emg(:, ch);
+        wr  = sqrt(movmean(sig.^2, win_samp, 'omitnan'));
+        ds  = max(1, round(numel(wr)/4000));  % downsample for plotting speed
         plot(T(k).time(1:ds:end), wr(1:ds:end), ...
-             'Color', colors(ch,:), 'LineWidth', 0.8, 'DisplayName', sensor_names{ch});
+             'Color', colors(idx,:), 'LineWidth', 0.8, 'DisplayName', sensor_names{ch});
     end
     hold off;
     legend('Location', 'northeastoutside', 'FontSize', 7, 'Interpreter', 'none');
