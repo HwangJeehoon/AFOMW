@@ -1,11 +1,17 @@
-function cycles = extractCycleWindows(ticks, trigger, pct, collectionLength)
-% EXTRACTCYCLEWINDOWS  정리된 gait cycle tick들로부터 유효한 step(gait cycle) 경계를 만든다.
-%   한 step = low 시작 tick -> 다음 low 시작 tick.
+function cycles = extractCycleWindows(gaitPath, trigger, pct, collectionLength)
+% EXTRACTCYCLEWINDOWS  gaitCycle_*.csv를 읽어 유효한 step(gait cycle) 경계를 만든다.
+%   연속으로 같은 값이 들어온 tick은 먼저 들어온 값(앞쪽 timestamp)만 사용해
+%   1(low)/2(high)가 엄격히 교대하도록 정리한 뒤,
+%   한 step = low 시작 tick -> 다음 low 시작 tick으로 자른다.
 %   EMG 녹화 범위(0~collectionLength) 밖으로 걸치는 step은 제외한다.
 %   결과는 시간 순으로 정렬되어 있어, 배열 인덱스가 곧 step 번호가 된다.
 
-t = ticks(:, 1);
-state = ticks(:, 2);
+T = readtable(gaitPath);
+state = T.data;
+keep = [true; diff(state) ~= 0];
+t = T.Time(keep);
+state = state(keep);
+
 lowIdx = find(state == 1);
 
 cycles = struct('startRel', {}, 'midRel', {}, 'endRel', {}, ...

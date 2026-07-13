@@ -1,17 +1,18 @@
-function processSubjectDate(subject, dateStr, rootDir)
+function processSubjectDate(subject, dateStr, pct, sensorNames, muscleNames, rootDir)
 % PROCESSSUBJECTDATE  한 subject/날짜에 대해 bare/P1/P2/P3 4개 trial을 모두
 % gait cycle 단위로 잘라 rectify하고, 같은 날짜의 걷는 구간(step) 샘플을
 % 모두 모아 센서별 RMS를 구해 정규화한 뒤 EMG_processed/에 csv로 저장한다.
+%   pct               : [start mid end] gait cycle % 경계 (subject별로 다름)
+%   sensorNames/muscleNames : 센서 슬롯 <-> 근육 이름 매핑 (병렬 cell array)
 
-if nargin < 3
+if nargin < 6
     rootDir = pwd;
 end
 
-pct = gaitCycleBreakpoints(subject);
-
 syncPath = fullfile(rootDir, subject, ['sync_' subject], ...
     sprintf('syncEMG_%s_%s.csv', subject, dateStr));
-syncMap = readSyncTimes(syncPath);
+syncTable = readtable(syncPath, 'TextType', 'string');
+syncMap = containers.Map(cellstr(lower(strtrim(syncTable.Trial))), num2cell(syncTable.Time));
 
 emgDir = fullfile(rootDir, subject, dateStr, 'EMG');
 gaitDir = fullfile(rootDir, subject, ['sync_' subject]);
@@ -33,12 +34,11 @@ for i = 1:numel(trials)
     gaitPath = fullfile(gaitDir, sprintf('gaitCycle_%s_%s_%s.csv', subject, dateStr, tr.gaitSuffix));
     trigger = syncMap(tr.key);
     fprintf('  [%s/%s] processing trial %s ...\n', subject, dateStr, tr.outPrefix);
-    allTrialCycles{i} = processTrialCycles(emgPath, gaitPath, trigger, pct);
+    allTrialCycles{i} = processTrialCycles(emgPath, gaitPath, trigger, pct, sensorNames, muscleNames);
     fprintf('    -> %d gait cycles extracted\n', numel(allTrialCycles{i}));
 end
 
 % 같은 날짜의 모든 trial에서 잘라낸(걷는 구간) rectified 샘플을 모아 센서별 RMS 산출
-[~, muscleNames] = muscleSensorMap();
 pooled = cell(1, numel(muscleNames));
 for i = 1:numel(trials)
     for c = 1:numel(allTrialCycles{i})

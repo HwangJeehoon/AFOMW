@@ -1,13 +1,13 @@
-function cycleTables = processTrialCycles(emgPath, gaitPath, trigger, pctBreakpoints)
+function cycleTables = processTrialCycles(emgPath, gaitPath, trigger, pct, sensorNames, muscleNames)
 % PROCESSTRIALCYCLES  trial 1개(bare/P1/P2/P3)에 대해 gait cycle별로 EMG를
 % 잘라 rectify까지 적용한 테이블 목록을 반환한다.
-%   cycleTables{c} 컬럼: Time, GaitCycle, L_TA, L_GM, L_RF, L_VL, R_TA, R_GM, R_RF, R_VL
+%   sensorNames{m} <-> muscleNames{m} 매핑을 이용해 파일마다 다른 센서 컬럼
+%   순서를 muscleNames 순서로 재배열한다.
+%   cycleTables{c} 컬럼: Time, GaitCycle, muscleNames{:}
 
 hdr = parseEMGHeader(emgPath);
-ticks = readGaitCycleTicks(gaitPath);
-cycles = extractCycleWindows(ticks, trigger, pctBreakpoints, hdr.collectionLength);
+cycles = extractCycleWindows(gaitPath, trigger, pct, hdr.collectionLength);
 
-[sensorNames, muscleNames] = muscleSensorMap();
 muscleColIdx = nan(1, numel(muscleNames));
 for m = 1:numel(muscleNames)
     idx = find(strcmp(hdr.sensorNames, sensorNames{m}), 1);
