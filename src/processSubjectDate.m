@@ -1,7 +1,7 @@
 function processSubjectDate(subject, dateStr, pct, sensorNames, muscleNames, rootDir)
 % PROCESSSUBJECTDATE  한 subject/날짜에 대해 bare/P1/P2/P3 4개 trial을 모두
 % gait cycle 단위로 자른다. 같은 날짜의 걷는 구간(step) raw 샘플을 모두 모아
-% 센서별 평균(offset)을 구해 rectify 전에 빼서 offset을 보정하고, 그 뒤
+% 센서별 trimmed mean(상/하위 10% 제외 평균, offset)을 구해 rectify 전에 빼서 보정하고, 그 뒤
 % rectify한 샘플을 다시 모아 센서별 RMS로 정규화한 뒤 EMG_processed/에 csv로
 % 저장한다.
 %   pct               : [start mid end] gait cycle % 경계 (subject별로 다름)
@@ -40,7 +40,7 @@ for i = 1:numel(trials)
     fprintf('    -> %d gait cycles extracted\n', numel(allTrialCycles{i}));
 end
 
-% 같은 날짜의 모든 trial에서 잘라낸(걷는 구간) raw 샘플을 모아 센서별 offset(평균) 산출
+% 같은 날짜의 모든 trial에서 잘라낸(걷는 구간) raw 샘플을 모아 센서별 offset(trimmed mean) 산출
 pooledRaw = cell(1, numel(muscleNames));
 for i = 1:numel(trials)
     for c = 1:numel(allTrialCycles{i})
@@ -50,9 +50,12 @@ for i = 1:numel(trials)
         end
     end
 end
+TRIM_FRAC = 0.1;  % 상/하위 10%씩 제외한 trimmed mean으로 offset 산출 (이상치·노이즈에 덜 민감)
 offsetVals = zeros(1, numel(muscleNames));
 for m = 1:numel(muscleNames)
-    offsetVals(m) = mean(pooledRaw{m});
+    v = sort(pooledRaw{m});
+    k = floor(numel(v) * TRIM_FRAC);
+    offsetVals(m) = mean(v(k + 1:end - k));
 end
 
 % offset 보정(빼기) 후 rectify(절댓값), 그 결과를 모아 센서별 RMS 산출
