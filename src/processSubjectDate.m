@@ -1,0 +1,71 @@
+function processSubjectDate(subject, dateStr, rootDir)
+% PROCESSSUBJECTDATE  한 subject/날짜에 대해 bare/P1/P2/P3 4개 trial을 모두
+% gait cycle 단위로 잘라 rectify하고, 같은 날짜의 걷는 구간(step) 샘플을
+% 모두 모아 센서별 RMS를 구해 정규화한 뒤 EMG_processed/에 csv로 저장한다.
+
+if nargin < 3
+    rootDir = pwd;
+end
+
+pct = gaitCycleBreakpoints(subject);
+
+syncPath = fullfile(rootDir, subject, ['sync_' subject], ...
+    sprintf('syncEMG_%s_%s.csv', subject, dateStr));
+syncMap = readSyncTimes(syncPath);
+
+emgDir = fullfile(rootDir, subject, dateStr, 'EMG');
+gaitDir = fullfile(rootDir, subject, ['sync_' subject]);
+outDir = fullfile(rootDir, subject, dateStr, 'EMG_processed');
+if ~exist(outDir, 'dir')
+    mkdir(outDir);
+end
+
+trials = struct( ...
+    'key',        {'bare', 'p1', 'p2', 'p3'}, ...
+    'emgFile',    {'bare.csv', 'P1.csv', 'P2.csv', 'P3.csv'}, ...
+    'gaitSuffix', {'BARE', 'p1', 'p2', 'p3'}, ...
+    'outPrefix',  {'bare', 'P1', 'P2', 'P3'});
+
+allTrialCycles = cell(1, numel(trials));
+for i = 1:numel(trials)
+    tr = trials(i);
+    emgPath = fullfile(emgDir, tr.emgFile);
+    gaitPath = fullfile(gaitDir, sprintf('gaitCycle_%s_%s_%s.csv', subject, dateStr, tr.gaitSuffix));
+    trigger = syncMap(tr.key);
+    fprintf('  [%s/%s] processing trial %s ...\n', subject, dateStr, tr.outPrefix);
+    allTrialCycles{i} = processTrialCycles(emgPath, gaitPath, trigger, pct);
+    fprintf('    -> %d gait cycles extracted\n', numel(allTrialCycles{i}));
+end
+
+% 같은 날짜의 모든 trial에서 잘라낸(걷는 구간) rectified 샘플을 모아 센서별 RMS 산출
+[~, muscleNames] = muscleSensorMap();
+pooled = cell(1, numel(muscleNames));
+for i = 1:numel(trials)
+    for c = 1:numel(allTrialCycles{i})
+        Ttab = allTrialCycles{i}{c};
+        for m = 1:numel(muscleNames)
+            pooled{m} = [pooled{m}; Ttab.(muscleNames{m})];
+        end
+    end
+end
+rmsVals = zeros(1, numel(muscleNames));
+for m = 1:numel(muscleNames)
+    rmsVals(m) = sqrt(mean(pooled{m} .^ 2));
+end
+
+% RMS로 정규화 후 저장
+for i = 1:numel(trials)
+    tr = trials(i);
+    for c = 1:numel(allTrialCycles{i})
+        Ttab = allTrialCycles{i}{c};
+        for m = 1:numel(muscleNames)
+            Ttab.(muscleNames{m}) = Ttab.(muscleNames{m}) / rmsVals(m);
+        end
+        outPath = fullfile(outDir, sprintf('%s_step%d.csv', tr.outPrefix, c));
+        writetable(Ttab, outPath);
+    end
+end
+
+fprintf('  [%s/%s] done. RMS(mV) per muscle [%s]: %s\n', subject, dateStr, ...
+    strjoin(muscleNames, ','), mat2str(rmsVals, 4));
+end
