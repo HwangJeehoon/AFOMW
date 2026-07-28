@@ -2,7 +2,7 @@ function processSubjectDate(subject, dateStr, pct, sensorNames, muscleNames, roo
 % PROCESSSUBJECTDATE  한 subject/날짜에 대해 bare/P1/P2/P3 4개 trial을 모두
 % gait cycle 단위로 자른다. 같은 날짜의 걷는 구간(step) raw 샘플을 모두 모아
 % 센서별 trimmed mean(상/하위 10% 제외 평균, offset)을 구해 rectify 전에 빼서 보정하고, 그 뒤
-% rectify한 샘플을 다시 모아 센서별 RMS로 정규화한 뒤 EMG_processed/에 csv로
+% rectify한 샘플을 다시 모아 센서별 95th percentile 값으로 정규화한 뒤 EMG_processed/에 csv로
 % 저장한다.
 %   pct               : [start mid end] gait cycle % 경계 (subject별로 다름)
 %   sensorNames/muscleNames : 센서 슬롯 <-> 근육 이름 매핑 (병렬 cell array)
@@ -58,7 +58,7 @@ for m = 1:numel(muscleNames)
     offsetVals(m) = mean(v(k + 1:end - k));
 end
 
-% offset 보정(빼기) 후 rectify(절댓값), 그 결과를 모아 센서별 RMS 산출
+% offset 보정(빼기) 후 rectify(절댓값), 그 결과를 모아 센서별 정규화 기준값(95th percentile) 산출
 pooledRectified = cell(1, numel(muscleNames));
 for i = 1:numel(trials)
     for c = 1:numel(allTrialCycles{i})
@@ -72,18 +72,21 @@ for i = 1:numel(trials)
         end
     end
 end
-rmsVals = zeros(1, numel(muscleNames));
+NORM_PCTL = 95;  % 정규화 기준: rectify된 신호의 상위 (100-NORM_PCTL)%를 넘어서는 값
+normVals = zeros(1, numel(muscleNames));
 for m = 1:numel(muscleNames)
-    rmsVals(m) = sqrt(mean(pooledRectified{m} .^ 2));
+    sortedVals = sort(pooledRectified{m});
+    idx = ceil(NORM_PCTL / 100 * numel(sortedVals));
+    normVals(m) = sortedVals(idx);
 end
 
-% RMS로 정규화 후 저장
+% 95th percentile 값으로 정규화 후 저장
 for i = 1:numel(trials)
     tr = trials(i);
     for c = 1:numel(allTrialCycles{i})
         Ttab = allTrialCycles{i}{c};
         for m = 1:numel(muscleNames)
-            Ttab.(muscleNames{m}) = Ttab.(muscleNames{m}) / rmsVals(m);
+            Ttab.(muscleNames{m}) = Ttab.(muscleNames{m}) / normVals(m);
         end
         outPath = fullfile(outDir, sprintf('%s_step%d.csv', tr.outPrefix, c));
         writetable(Ttab, outPath);
@@ -92,6 +95,6 @@ end
 
 fprintf('  [%s/%s] done. offset(mV) per muscle [%s]: %s\n', subject, dateStr, ...
     strjoin(muscleNames, ','), mat2str(offsetVals, 4));
-fprintf('  [%s/%s] done. RMS(mV) per muscle [%s]: %s\n', subject, dateStr, ...
-    strjoin(muscleNames, ','), mat2str(rmsVals, 4));
+fprintf('  [%s/%s] done. %dth percentile(mV) per muscle [%s]: %s\n', subject, dateStr, ...
+    NORM_PCTL, strjoin(muscleNames, ','), mat2str(normVals, 4));
 end
