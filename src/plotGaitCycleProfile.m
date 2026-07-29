@@ -52,6 +52,7 @@ for m = 1:numel(muscleNames)
     xlabel(sprintf('Affected Side (%s) Gait Cycle (%%)', sideNames.(affectedSide)));
     ylabel('Normalized Muscle Activation');
     xlim([0 100]);
+    ylim([-0.2 2]);
     title(sprintf('%s(%s) - %s %s', subject, dateStr, side, muscle), 'FontSize', 30);
     legend({trials.name}, 'FontSize', 30, 'Location', 'best');
 
