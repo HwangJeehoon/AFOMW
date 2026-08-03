@@ -19,7 +19,7 @@ RAW_COLOR = [0.6 0.6 0.6];
 RAW_ALPHA = 0.35;  % raw를 filtered보다 흐리게 보이도록 하는 투명도
 FILT_COLOR = [0 0.298 0.588];
 
-Fs = 1 / mean(diff(trials(1).tables{1}.Time));
+Fs = 1 / mean(diff(trials(1).tables{1}.EMGTime));
 [filtB, filtA] = butter(FILTER_ORDER, lpfCutoffHz / (Fs / 2), 'low');
 
 % filtfilt 기본 padding(계수 개수 x 3, 몇 샘플 안 됨)은 lpfCutoffHz처럼 매우 낮은

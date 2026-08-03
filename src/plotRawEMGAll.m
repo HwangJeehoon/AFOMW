@@ -26,7 +26,7 @@ MOVRMS_WINDOW_PCT = 5;  % moving RMS window 길이 (gait cycle %) — burst 폭(
 LINE_COLOR = [0 0.298 0.588];
 LINE_ALPHA = 0.15;  % step이 많이 겹쳐도 밀도가 보이도록 옅게
 
-Fs = 1 / mean(diff(trials(1).tables{1}.Time));
+Fs = 1 / mean(diff(trials(1).tables{1}.EMGTime));
 [filtB, filtA] = butter(FILTER_ORDER, lpfCutoffHz / (Fs / 2), 'low');
 padLenTarget = ceil(3 * Fs / lpfCutoffHz);
 

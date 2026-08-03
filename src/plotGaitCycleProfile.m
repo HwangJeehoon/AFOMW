@@ -13,7 +13,7 @@ end
 GRID = 0:100;
 FILTER_ORDER = 4;
 
-Fs = 1 / mean(diff(trials(1).tables{1}.Time));
+Fs = 1 / mean(diff(trials(1).tables{1}.EMGTime));
 [filtB, filtA] = butter(FILTER_ORDER, lpfCutoffHz / (Fs / 2), 'low');
 
 colors = lines(numel(trials));  % RMS bar plot(plotRMSBarByMuscle.m)과 동일한 trial-색상 순서

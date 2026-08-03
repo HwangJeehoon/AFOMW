@@ -4,7 +4,9 @@ function cycleTables = processTrialCycles(emgPath, gaitPath, trigger, pct, senso
 % 같은 날짜 전체를 모아야 하므로 processSubjectDate에서 이어서 처리한다.
 %   sensorNames{m} <-> muscleNames{m} 매핑을 이용해 파일마다 다른 센서 컬럼
 %   순서를 muscleNames 순서로 재배열한다.
-%   cycleTables{c} 컬럼: Time, GaitCycle, muscleNames{:} (raw, mV)
+%   cycleTables{c} 컬럼: EMGTime, AFOTime, GaitCycle, muscleNames{:} (raw, mV)
+%   EMGTime : EMG csv 자체 시계(초). AFOTime : trigger를 더해 복원한 AFO(ROS) epoch 시계(초)
+%   - gaitCycle_*.csv Time 컬럼 및 AFO/*.bag 토픽과 같은 시간축이라 직접 대조 가능.
 
 hdr = parseEMGHeader(emgPath);
 cycles = extractCycleWindows(gaitPath, trigger, pct, hdr.collectionLength);
@@ -23,9 +25,10 @@ cycleTables = cell(numel(cycles), 1);
 for c = 1:numel(cycles)
     win = readEMGWindow(emgPath, hdr, cycles(c).startRel, cycles(c).endRel);
     pctVec = gaitPercentInterp(win.time, cycles(c));
+    afoTimeVec = win.time + trigger;
     vals = win.values(:, muscleColIdx);
-    cycleTables{c} = array2table([win.time, pctVec, vals], ...
-        'VariableNames', [{'Time', 'GaitCycle'}, muscleNames]);
+    cycleTables{c} = array2table([win.time, afoTimeVec, pctVec, vals], ...
+        'VariableNames', [{'EMGTime', 'AFOTime', 'GaitCycle'}, muscleNames]);
 end
 
 cycleTables = realignToTrueCycles(cycleTables);
