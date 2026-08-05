@@ -99,12 +99,15 @@ for i = 1:numel(configs)
     % plotPeakTimingByMuscle(cfg.subject, cfg.dateStr, trials, muscleNames, sideNames, muscleFullNames, outDir, lpfCutoffHz, cfg.affectedSide);
 
     %% 5. Raw EMG all steps overlay
-    rawLpfCutoffHz = 8;
-    VALID_PEAK_DELTA = 0.5;  % 근육별 Otsu 자동 임계값의 최소 하한(봉우리가 사실상 없는 근육 대비)
-    [validCounts, totalSteps] = plotRawEMGAll(cfg.subject, cfg.dateStr, trials, muscleNames, sideNames, muscleFullNames, outDir, cfg.affectedSide, rawLpfCutoffHz, VALID_PEAK_DELTA);
+    % rawLpfCutoffHz = 8;
+    % VALID_PEAK_DELTA = 0.5;  % '유효 봉우리' RMS envelope max-min 고정 임계값
+    % [validCounts, totalSteps] = plotRawEMGAll(cfg.subject, cfg.dateStr, trials, muscleNames, sideNames, muscleFullNames, outDir, cfg.affectedSide, rawLpfCutoffHz, VALID_PEAK_DELTA);
 
     %% 6. Valid peak table (근육 x trial)
-    plotValidPeakTable(cfg.subject, cfg.dateStr, validCounts, totalSteps, trialKeys, muscleNames, sideNames, muscleFullNames, outDir, cfg.affectedSide);
+    % plotValidPeakTable(cfg.subject, cfg.dateStr, validCounts, totalSteps, trialKeys, muscleNames, sideNames, muscleFullNames, outDir, cfg.affectedSide);
+
+    %% 7. Fatigue trend (trial 안 초반/중반/후반 RMS 변화)
+    plotFatigueTrend(cfg.subject, cfg.dateStr, trials, muscleNames, sideNames, muscleFullNames, outDir);
 
     %%
     fprintf('\n=== plotting complete: %s ===\n', outDir);
