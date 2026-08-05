@@ -107,7 +107,25 @@ for i = 1:numel(configs)
     % plotValidPeakTable(cfg.subject, cfg.dateStr, validCounts, totalSteps, trialKeys, muscleNames, sideNames, muscleFullNames, outDir, cfg.affectedSide);
 
     %% 7. Fatigue trend (trial 안 초반/중반/후반 RMS 변화)
-    plotFatigueTrend(cfg.subject, cfg.dateStr, trials, muscleNames, sideNames, muscleFullNames, outDir);
+    % plotFatigueTrend(cfg.subject, cfg.dateStr, trials, muscleNames, sideNames, muscleFullNames, outDir);
+
+    %% 8/9. Raw EMG + angle, Profile + angle profile (EMG_AFO_merged 필요)
+    trialsMerged = struct('name', {}, 'steps', {}, 'tables', {});
+    for k = 1:numel(trialKeys)
+        key = trialKeys{k};
+        trialsMerged(k).name = key;
+        trialsMerged(k).steps = cfg.stepRange.(key);
+        trialsMerged(k).tables = loadTrialStepsMerged(cfg.subject, cfg.dateStr, key, trialsMerged(k).steps, rootDir);
+    end
+
+    rawLpfCutoffHz = 8;
+    plotRawEMGWithAngle(cfg.subject, cfg.dateStr, trialsMerged, muscleNames, sideNames, muscleFullNames, outDir, cfg.affectedSide, rawLpfCutoffHz);
+
+    % std = false;
+    std = true;
+    lpfCutoffHz = 8;
+    plotGaitCycleProfileWithAngle(cfg.subject, cfg.dateStr, trialsMerged, muscleNames, sideNames, muscleFullNames, outDir, lpfCutoffHz, cfg.affectedSide, 'Knee', std);
+    plotGaitCycleProfileWithAngle(cfg.subject, cfg.dateStr, trialsMerged, muscleNames, sideNames, muscleFullNames, outDir, lpfCutoffHz, cfg.affectedSide, 'Ankle', std);
 
     %%
     fprintf('\n=== plotting complete: %s ===\n', outDir);
