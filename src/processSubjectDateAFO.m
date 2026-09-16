@@ -36,13 +36,10 @@ mergedOutDir = paths.emgAfoStepsDir;
 if ~exist(mergedOutDir, 'dir')
     mkdir(mergedOutDir);
 end
-
-trials = struct( ...
-    'key',        {'bare', 'p1', 'p2', 'p3'}, ...
-    'bagFile',    {'bare.bag', 'p1.bag', 'p2.bag', 'p3.bag'}, ...
-    'emgFile',    {'bare.csv', 'P1.csv', 'P2.csv', 'P3.csv'}, ...
-    'gaitSuffix', {'BARE', 'p1', 'p2', 'p3'}, ...
-    'outPrefix',  {'bare', 'P1', 'P2', 'P3'});
+calibrationRows = struct('Trial', {}, 'Joint', {}, 'GroundTime', {}, 'StandTime', {}, ...
+    'FunctionalStartTime', {}, 'FunctionalEndTime', {}, 'AxisX', {}, 'AxisY', {}, 'AxisZ', {}, ...
+    'SampleCount', {}, 'SelectedSampleCount', {}, 'ExplainedVariance', {}, 'RefAlignment', {}, ...
+    'P05Deg', {}, 'P95Deg', {});
 
 for i = 1:numel(trials)
     tr = trials(i);
@@ -51,16 +48,22 @@ for i = 1:numel(trials)
     gaitPath = fullfile(gaitDir, sprintf('gaitCycle_%s_%s_%s.csv', subject, dateStr, tr.gaitSuffix));
     trigger = syncMap(tr.key);
 
-    fprintf('  [%s/%s] computing AFO angles for trial %s ...\n', subject, dateStr, tr.outPrefix);
-    angleTable = computeAFOJointAngles(bagPath);
-
     % EMG와 동일한 gait cycle 경계를 쓰기 위해 EMG 녹화 길이(collectionLength)를 그대로 가져다 쓴다.
     hdr = parseEMGHeader(emgPath);
+    windows = extractCycleWindows(gaitPath, trigger, pct, hdr.collectionLength);
+    if isempty(windows)
+        error('processSubjectDateAFO:noFunctionalWindow', ...
+            'No valid gait cycles found for %s/%s/%s.', subject, dateStr, tr.label);
+    end
+    functionalTimeRange = [windows(1).startRel, windows(end).endRel] + trigger;
+
+    fprintf('  [%s/%s] computing AFO angles for trial %s ...\n', subject, dateStr, tr.label);
+    [angleTable, calibration] = computeAFOJointAngles(bagPath, functionalTimeRange);
     cycleTables = cutAngleCycles(angleTable, gaitPath, trigger, pct, hdr.collectionLength);
     fprintf('    -> %d gait cycles extracted\n', numel(cycleTables));
 
-    % EMG_processed/{bare,p1,p2,p3}/의 step csv를 읽어 AFOTime 기준으로 관절각
-    % 컬럼을 보간·추가한 뒤 EMG_AFO_merged/{bare,p1,p2,p3}/에 저장
+    % processed/emg_steps/{bare,p1,p2,p3}/의 step csv를 읽어 AFOTime 기준으로 관절각
+    % 컬럼을 보간·추가한 뒤 processed/emg_afo_steps/{bare,p1,p2,p3}/에 저장
     jointNames = angleTable.Properties.VariableNames(2:end);
     trialDir = fullfile(mergedOutDir, tr.key);
     if ~exist(trialDir, 'dir')
@@ -75,7 +78,22 @@ for i = 1:numel(trials)
         end
         writetable(emgStep, fullfile(trialDir, sprintf('step%d.csv', c)));
     end
+
+    for j = 1:numel(calibration.joints)
+        joint = calibration.joints(j);
+        calibrationRows(end + 1) = struct( ...
+            'Trial', tr.label, 'Joint', joint.name, ...
+            'GroundTime', calibration.groundTime, 'StandTime', calibration.standTime, ...
+            'FunctionalStartTime', calibration.functionalStartTime, ...
+            'FunctionalEndTime', calibration.functionalEndTime, ...
+            'AxisX', joint.axis(1), 'AxisY', joint.axis(2), 'AxisZ', joint.axis(3), ...
+            'SampleCount', joint.sampleCount, 'SelectedSampleCount', joint.selectedSampleCount, ...
+            'ExplainedVariance', joint.explainedVariance, 'RefAlignment', joint.refAlignment, ...
+            'P05Deg', joint.p05Deg, 'P95Deg', joint.p95Deg); %#ok<AGROW>
+    end
 end
+
+writetable(struct2table(calibrationRows), fullfile(mergedOutDir, 'AFO_calibration.csv'));
 
 fprintf('  [%s/%s] AFO processing done.\n', subject, dateStr);
 end
