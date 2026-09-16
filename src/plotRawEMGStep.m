@@ -6,7 +6,7 @@ function plotRawEMGStep(subject, dateStr, trials, muscleNames, sideNames, muscle
 %   0%/100% 경계에서 왜곡을 줄인다(filtfiltStitched 참고).
 %   x축은 (그리는 muscle의 side와 무관하게) 항상 affectedSide의 gait cycle(%)이고
 %   0~100%, y축은 0~2로 고정해 step/근육 간에 동일한 스케일로 비교할 수 있게 한다.
-%   (EMG_processed 단계(processTrialCycles의 realignToTrueCycles)에서 이미 각
+%   (processed/emg_steps 단계(processTrialCycles의 realignToTrueCycles)에서 이미 각
 %   step이 진짜 0~100% 한 사이클을 연속적으로 담도록 잘라놓았으므로 여기서 별도
 %   wrap 처리는 하지 않는다.)
 %   trials(k).name/.steps/.tables : trial 이름, 실제 step 번호(cfg.stepRange), loadTrialSteps로 읽은 step 테이블

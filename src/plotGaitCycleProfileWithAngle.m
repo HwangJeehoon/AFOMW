@@ -4,7 +4,7 @@ function plotGaitCycleProfileWithAngle(subject, dateStr, trials, muscleNames, si
 %   'Knee'|'Ankle') mean profile을 아래쪽 subplot에 같은 gait cycle(%) x축을
 %   공유해 함께 그린다. 관절각은 원래도 매끄러운 신호라 activation과 달리
 %   별도 LPF는 적용하지 않고 step별로 공통 grid에 보간해 평균만 낸다.
-%   trials(k).tables는 EMG_AFO_merged/{trial}_step{N}.csv에서 읽은(=angle 컬럼
+%   trials(k).tables는 processed/emg_afo_steps/{trial}/step{N}.csv에서 읽은(=angle 컬럼
 %   포함) 테이블이어야 한다(loadTrialStepsMerged 참고).
 %   근육 하나당 png 1장 -> outDir/Profile_with{jointType}/Profile_{muscleCol}.png
 

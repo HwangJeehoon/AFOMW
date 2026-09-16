@@ -2,7 +2,7 @@ function cycleTables = cutAngleCycles(angleTable, gaitPath, trigger, pct, collec
 % CUTANGLECYCLES  computeAFOJointAngles가 만든 트라이얼 전체 각도 테이블을,
 % EMG와 같은 gait cycle 경계(extractCycleWindows)로 step 단위로 자른다.
 % gaitPath/trigger/pct/collectionLength를 EMG 쪽과 동일하게 넣으면 같은 step
-% 경계가 나오므로, EMG_processed와 step 번호가 그대로 대응된다.
+% 경계가 나오므로, processed/emg_steps와 step 번호가 그대로 대응된다.
 %   angleTable 컬럼: AFOTime, <관절각 컬럼들...> (computeAFOJointAngles 참고)
 %   cycleTables{c} 컬럼: EMGTime, AFOTime, GaitCycle, <관절각 컬럼들...>
 

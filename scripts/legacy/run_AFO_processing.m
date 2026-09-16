@@ -13,6 +13,7 @@ rootDir = fullfile(fileparts(mfilename('fullpath')), '..');
 % subject별 gait cycle % 경계 [start mid end] (run_EMG_processing.m과 동일해야 함)
 gaitPct.SAH01 = [0, 70, 100];
 gaitPct.SAH03 = [-10, 60, 90];
+gaitPct.SAH04 = [-10, 60, 90];
 
 % 처리할 subject/날짜 조합 (대응하는 AFO/*.bag, EMG_processed 결과가 있는 것만)
 % targets = struct( ...

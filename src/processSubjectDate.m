@@ -1,11 +1,11 @@
-function processSubjectDate(subject, dateStr, pct, sensorNames, muscleNames, rootDir)
+function processSubjectDate(subject, dateStr, pct, sensorNames, muscleNames, rootDir, trials)
 % PROCESSSUBJECTDATE  한 subject/날짜에 대해 bare/P1/P2/P3 4개 trial을 모두
 % gait cycle 단위로 자른다. 같은 날짜의 걷는 구간(step) raw 샘플을 모두 모아
 % 센서별 trimmed mean(상/하위 10% 제외 평균, offset)을 구해 rectify 전에 빼서 보정하고, 그 뒤
 % rectify한 샘플을 다시 모아 센서별 95th percentile 값으로 정규화한다. 여기에 추가로
 % LPF_CUTOFF_HZ(Hz) 4th-order zero-phase low-pass filter(plot 스크립트들과 동일한
 % filtfiltStitched, 이웃 step 데이터로 padding)를 적용한 <muscle>_lpf 컬럼을 만들어
-% EMG_processed/{bare,p1,p2,p3}/step{N}.csv에 raw(정규화된, 필터 미적용) 컬럼과
+% processed/emg_steps/{bare,p1,p2,p3}/step{N}.csv에 raw(정규화된, 필터 미적용) 컬럼과
 % 함께 저장한다. 각 csv는 'emg_lpf_hz = <값>' 메타데이터 줄과 'endheader'
 % 줄로 시작하는 헤더 뒤에 컬럼 이름/데이터가 이어진다(readProcessedEMGCsv로 읽는다).
 %   pct               : [start mid end] gait cycle % 경계 (subject별로 다름)
@@ -14,18 +14,26 @@ function processSubjectDate(subject, dateStr, pct, sensorNames, muscleNames, roo
 if nargin < 6
     rootDir = pwd;
 end
+if nargin < 7 || isempty(trials)
+    trials = struct( ...
+        'key',        {'bare', 'p1', 'p2', 'p3'}, ...
+        'emgFile',    {'bare.csv', 'P1.csv', 'P2.csv', 'P3.csv'}, ...
+        'gaitSuffix', {'BARE', 'p1', 'p2', 'p3'}, ...
+        'label',      {'bare', 'P1', 'P2', 'P3'});
+end
 
 LPF_CUTOFF_HZ = 8;   % run_EMG_plots.m의 profile/raw EMG plot들과 동일한 cutoff
 FILTER_ORDER = 4;
 
-syncPath = fullfile(rootDir, subject, ['sync_' subject], ...
+paths = getSubjectDatePaths(rootDir, subject, dateStr);
+syncPath = fullfile(paths.syncDir, ...
     sprintf('syncEMG_%s_%s.csv', subject, dateStr));
 syncTable = readtable(syncPath, 'TextType', 'string');
 syncMap = containers.Map(cellstr(lower(strtrim(syncTable.Trial))), num2cell(syncTable.Time));
 
-emgDir = fullfile(rootDir, subject, dateStr, 'EMG');
-gaitDir = fullfile(rootDir, subject, ['sync_' subject]);
-outDir = fullfile(rootDir, subject, dateStr, 'EMG_processed');
+emgDir = paths.emgRawDir;
+gaitDir = paths.syncDir;
+outDir = paths.emgStepsDir;
 % if exist(outDir, 'dir')
 %     rmdir(outDir, 's');  % 예전 flat 파일(예: P1_step1.csv) 잔재 삭제 시도 - 파일이
 %     % 열려있거나 OneDrive 동기화 중이면 조용히 실패할 수 있어 주석 처리(잔재는 무해함)
@@ -34,19 +42,13 @@ if ~exist(outDir, 'dir')
     mkdir(outDir);
 end
 
-trials = struct( ...
-    'key',        {'bare', 'p1', 'p2', 'p3'}, ...
-    'emgFile',    {'bare.csv', 'P1.csv', 'P2.csv', 'P3.csv'}, ...
-    'gaitSuffix', {'BARE', 'p1', 'p2', 'p3'}, ...
-    'outPrefix',  {'bare', 'P1', 'P2', 'P3'});
-
 allTrialCycles = cell(1, numel(trials));
 for i = 1:numel(trials)
     tr = trials(i);
     emgPath = fullfile(emgDir, tr.emgFile);
     gaitPath = fullfile(gaitDir, sprintf('gaitCycle_%s_%s_%s.csv', subject, dateStr, tr.gaitSuffix));
     trigger = syncMap(tr.key);
-    fprintf('  [%s/%s] processing trial %s ...\n', subject, dateStr, tr.outPrefix);
+    fprintf('  [%s/%s] processing trial %s ...\n', subject, dateStr, tr.label);
     allTrialCycles{i} = processTrialCycles(emgPath, gaitPath, trigger, pct, sensorNames, muscleNames);
     fprintf('    -> %d gait cycles extracted\n', numel(allTrialCycles{i}));
 end
