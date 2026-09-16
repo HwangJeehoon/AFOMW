@@ -8,16 +8,29 @@ function [angleTable, calibration] = computeAFOJointAnglesSagittal(bagPath, func
 %   plane이 되고, 그 평면에 투영한 각도가 sagittal(굴곡-신전) 각도가 된다.
 %
 %   계산 순서:
-%     1) qJoint(t) = quatinv(qA(t)) ⊗ qB(t)  - computeAFOJointAngles와 동일하게
-%        A/B 각자의 (서로 무관하게 임의로 정해지는) global-zero 기준을 상쇄해
-%        "A 좌표계에서 본 B의 상대회전"이라는 하나의 일관된 좌표계로 만든다.
-%        (v1에서는 이 단계를 생략하고 vA, vB를 각자 좌표계에서 따로 구해
-%        바로 cross해서 좌표계가 안 맞는 채로 계산되는 버그가 있었다.)
+%     1) global zeroing(zeroingTimeGlobal) 기준으로 각 IMU의 상대자세를 구한다
+%        (cal_Angle_IMU). qJoint(t) = quatinv(qA(t)) ⊗ qB(t)로 A/B 각자의
+%        (서로 무관하게 임의로 정해지는) global-zero 기준을 상쇄해 "A 좌표계에서
+%        본 B의 상대회전"이라는 하나의 일관된 좌표계로 만든다(초안에서는 이 단계
+%        없이 vA, vB를 각자 좌표계에서 따로 구해 바로 cross해서 좌표계가 안 맞는
+%        채로 계산되는 버그가 있었다 - 수정됨).
 %     2) vRel(t) = qJoint(t)로 로컬 Y축[0 1 0]을 회전 → A가 보는 B의 limb 방향.
 %        정지 상태(qJoint=identity)면 vRel=[0 1 0]이 나온다.
-%     3) 로컬 X(roll, mediolateral) 성분은 버리고 Y-Z 평면에서 atan2로 각도를
-%        구한다: angle(t) = atan2(vRel_z(t), vRel_y(t)). PCA로 축을 추정하는
-%        과정이 전혀 없다 - roll축이 곧 제외할 축이라는 게 고정 가정이기 때문.
+%     3) 로컬 X(roll, mediolateral) 성분은 버리고 Y-Z 평면(=sagittal plane)에서
+%        A 자신의 방향[0 1 0]과 vRel(t) 사이의 부호 있는 각도를 구한다:
+%        raw(t) = atan2(vRel_z(t), vRel_y(t)) (-180~180도, abs 없음 - 절대값을
+%        쓰면 실제로 0도를 지나가는 관절(특히 hip)에서 신호가 접혀서(fold)
+%        상관관계가 깨지는 문제가 있었다).
+%     4) zeroingTimeStand 시점 값을 offset으로 빼서 stand 자세 기준 변화량으로
+%        만든 뒤, 관절별 지정 부호(signMultiplier)를 곱해 최종 각도를 만든다:
+%          hip  : ×-1  (허벅지가 torso와 가까워지는 flexion이 양수가 되도록)
+%          knee : ×+1  (무릎이 굽혀지는 flexion이 양수 - raw 그대로 이미 맞음)
+%          ankle: ×+1  (발목이 펴지는 plantarflexion이 양수 - raw 그대로 이미 맞음)
+%        이 부호는 SAH01/260706, SAH03/260623(둘 다 문제 없다고 확인된 트라이얼)
+%        에서, 보행 중 각 이벤트의 타이밍이 명확한 지점(hip: heel strike=최대
+%        flexion, knee: toe-off 직후 swing=최대 flexion, ankle: toe-off 부근
+%        push-off=최대 plantarflexion)의 실측값 부호로 직접 확인했다. ankle은
+%        다른 트라이얼에서 신호가 약해 hip/knee보다 확신도가 낮다.
 %
 %   computeAFOJointAngles(quaternion functional-hinge-twist 방식, PCA로 축을
 %   찾음)와의 비교용. 반환 형식은 동일: AFOTime + left/right hip/knee/ankle
@@ -30,6 +43,8 @@ end
 pairs = [0 1; 1 2; 2 3; 0 4; 4 5; 5 6];
 jointNames = {'left_hip_angle', 'left_knee_angle', 'left_ankle_angle', ...
     'right_hip_angle', 'right_knee_angle', 'right_ankle_angle'};
+% flexion(hip/knee)·plantarflexion(ankle)이 양수가 되도록 실측으로 정한 부호
+signMultiplier = [-1, 1, 1, -1, 1, 1];
 limbAxisLocal = [0, 1, 0];  % pitch축 = limb 방향 가정
 
 imuRaw = readAFOBagTopic(bagPath, '/afo_sensor/imu');
@@ -80,9 +95,9 @@ for k = 1:size(pairs, 1)
         qRelative.(nameB), timeStruct.(nameB));  % A 좌표계로 통일된 상대회전
 
     vRel = rotateVectorByQuat(qJoint, limbAxisLocal);  % A가 보는 B의 limb 방향
-    angleRad = atan2(vRel(:, 3), vRel(:, 2));           % roll(X)축은 버리고 Y-Z 평면 각도
-    angleDeg = rad2deg(angleRad);
-    angleCols(:, k) = angleDeg - angleDeg(idxZero);      % stand neutral = 0 deg
+    rawDeg = rad2deg(atan2(vRel(:, 3), vRel(:, 2)));    % roll(X) 버리고 Y-Z 평면, 부호 유지
+    relDeg = rawDeg - rawDeg(idxZero);                   % stand 시점 값을 offset으로 보정
+    angleCols(:, k) = signMultiplier(k) * relDeg;         % flexion/plantarflexion 양수로 부호 고정
 
     calibration.joints(k) = struct('name', jointNames{k});
 end
