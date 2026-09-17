@@ -1,8 +1,8 @@
 function compareIMUAngleMethods(subject, dateStr, trialKey, stepNum)
-% COMPAREIMUANGLEMETHODS  computeAFOJointAngles(quaternion functional-hinge
-% twist)와 computeAFOJointAnglesSagittal(limb 방향벡터 sagittal 투영, pitch축
-% =limb 방향 가정)을 같은 bag/step에 대해 계산해 겹쳐 그리고, 상관계수·부호
-% 정렬 후 RMS 차이를 출력하는 간단 비교 스크립트.
+% COMPAREIMUANGLEMETHODS  현재 main의 computeAFOJointAngles(sagittal plane
+% 고정축 투영 방식)와 legacy의 computeAFOJointAnglesHingeTwist(quaternion
+% functional-hinge twist, PCA로 축 추정)를 같은 bag/step에 대해 계산해 겹쳐
+% 그리고, 상관계수·부호 정렬 후 RMS 차이를 출력하는 회귀검증/비교용 스크립트.
 %   예: compareIMUAngleMethods('SAH01', '260706', 'bare', 10)
 
 if nargin < 4 || isempty(stepNum)
@@ -12,6 +12,7 @@ end
 scriptDir = fileparts(mfilename('fullpath'));
 rootDir = fileparts(fileparts(scriptDir));
 addpath(fullfile(rootDir, 'src'));
+addpath(fullfile(rootDir, 'src', 'legacy'));
 addpath(fullfile(rootDir, 'scripts', 'config'));
 cfg = pipeline_config();
 
@@ -43,8 +44,8 @@ functionalTimeRange = [windows(1).startRel, windows(end).endRel] + trigger;
 fprintf('=== %s/%s/%s (functional window %.1f~%.1fs, %d gait cycles) ===\n', ...
     subject, dateStr, trial.label, functionalTimeRange(1) - trigger, functionalTimeRange(2) - trigger, numel(windows));
 
-angleTableHinge = computeAFOJointAngles(bagPath, functionalTimeRange);
-angleTableSag = computeAFOJointAnglesSagittal(bagPath, functionalTimeRange);
+angleTableHinge = computeAFOJointAnglesHingeTwist(bagPath, functionalTimeRange);
+angleTableSag = computeAFOJointAngles(bagPath, functionalTimeRange);
 
 cyclesHinge = cutAngleCycles(angleTableHinge, gaitPath, trigger, target.gaitPct, header.collectionLength);
 cyclesSag = cutAngleCycles(angleTableSag, gaitPath, trigger, target.gaitPct, header.collectionLength);
@@ -75,9 +76,9 @@ for j = 1:numel(jointNames)
     sagValAligned = signAlign * sagVal;
     rmsDiff = sqrt(mean((hingeVal - sagValAligned).^2));
 
-    plot(ax, stepHinge.GaitCycle, hingeVal, 'Color', [0 0.45 0.74], 'LineWidth', 1.6, 'DisplayName', 'hinge-twist(기존)');
+    plot(ax, stepHinge.GaitCycle, hingeVal, 'Color', [0 0.45 0.74], 'LineWidth', 1.6, 'DisplayName', 'hinge-twist(legacy)');
     plot(ax, stepSag.GaitCycle, sagValAligned, 'Color', [0.85 0.33 0.10], 'LineWidth', 1.6, 'LineStyle', '--', ...
-        'DisplayName', sprintf('sagittal-proj(신규, %s)', tern(signAlign < 0, '부호반전', '부호동일')));
+        'DisplayName', sprintf('sagittal-proj(main, %s)', tern(signAlign < 0, '부호반전', '부호동일')));
     if j == 1
         legend(ax, 'Location', 'best');
     end
