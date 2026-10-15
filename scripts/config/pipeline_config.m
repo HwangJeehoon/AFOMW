@@ -34,6 +34,8 @@ cfg.figureTargets(1) = makeFigureTarget('SAH01', '260706', 'L', 3:73, 18:88, 7:7
 cfg.figureTargets(2) = makeFigureTarget('SAH01', '260713', 'L', 3:73, 4:74, 8:78, 3:73);
 cfg.figureTargets(3) = makeFigureTarget('SAH03', '260623', 'L', 4:74, 51:121, 3:73, 23:93);
 cfg.figureTargets(4) = makeFigureTarget('SAH03', '260630', 'L', 4:74, 14:84, 15:85, 15:85);
+cfg.figureTargets(5) = makeFigureTarget('SAH04', '260804', 'R', 3:73, 3:73, 3:73, 12:82);
+cfg.figureTargets(6) = makeFigureTarget('SAH04', '260811', 'R', 3:73, 3:73, 3:73, 10:80);
 
 % 필요한 그림만 true로 바꾼다. angle 그림은 emg_afo_steps가 있어야 한다.
 cfg.figureOptions = struct( ...
