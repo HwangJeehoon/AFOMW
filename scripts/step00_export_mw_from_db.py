@@ -61,11 +61,13 @@ def format_value(col, v):
 
 
 def read_sync(path):
-    """syncEMG CSV를 {trial 이름(소문자): EMG 시작 Unix time}으로 읽는다."""
+    """syncEMG CSV(쉼표 또는 탭 구분)를 {trial 이름(소문자): EMG 시작 Unix time}으로 읽는다."""
     if not path.exists():
         return {}
     with open(path, encoding="utf-8-sig", newline="") as f:
-        return {r["Trial"].lower(): float(r["Time"]) for r in csv.DictReader(f)}
+        lines = f.read().splitlines()
+    dialect = csv.Sniffer().sniff(lines[0], delimiters=",\t")
+    return {r["Trial"].strip().lower(): float(r["Time"]) for r in csv.DictReader(lines, dialect=dialect)}
 
 
 def main(subject):
