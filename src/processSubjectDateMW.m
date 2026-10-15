@@ -4,11 +4,16 @@ function processSubjectDateMW(subject, dateStr, pct, affectedSide, rootDir, tria
 % processed/emg_afo_steps/{bare,p1,p2,p3}/step{N}.csv 각 행의 AFOTime에 MW 값을 붙여
 % processed/emg_afo_mw_steps/{bare,p1,p2,p3}/step{N}.csv에 저장한다.
 % 반드시 processSubjectDateAFO 이후 실행한다.
-%   기존 컬럼 GaitCycle은 GaitCycle_afo로 이름만 바꾸고, 다음 컬럼을 추가한다.
+%   각 csv는 컬럼 설명 메타데이터 줄과 'endheader' 줄 뒤에 컬럼 이름/데이터가 이어진다
+%   (readProcessedEMGCsv로 읽는다). emg_afo_steps 대비 컬럼 변경:
+%     GaitCycle              -> GaitCycle_afo
+%     <muscle>, <muscle>_lpf -> LPF 버전만 <muscle> 이름으로 남김
+%     left/right_<joint>_angle -> L/R_<joint>_angle
+%   추가 컬럼:
 %     MWTime            : 가장 가까운 MW 샘플의 p_trainingSaveTime (mm:ss.s 그대로)
 %     GaitCycle_MW_R/L  : 가장 가까운 MW 샘플의 p_right/leftCurrentGaitCycleRate 그대로
 %                         (GaitCycle_afo와 비교하는 디버깅용)
-%     L_GRF, R_GRF      : p_left/rightCurrentGRF (선형보간)
+%     L_vGRF, R_vGRF    : p_left/rightCurrentGRF (선형보간)
 %     L_CoP, R_CoP      : 로드셀 앞쪽 비율 1D CoP, 0 = 뒤 ~ 1 = 앞 (선형보간)
 %     BWS               : p_bwsCurrentSupport (선형보간)
 %   MW 기록 범위 밖의 행은 MW 컬럼이 비어 있다.
@@ -31,7 +36,24 @@ if ~exist(outDir, 'dir')
     mkdir(outDir);
 end
 
-mwNames = {'L_GRF', 'L_CoP', 'R_GRF', 'R_CoP', 'BWS'};
+mwNames = {'L_vGRF', 'L_CoP', 'R_vGRF', 'R_CoP', 'BWS'};
+
+% EMG LPF cutoff는 processSubjectDate가 emg_steps csv 첫 줄(emg_lpf_hz = <값>)에 남긴 값을 쓴다.
+% 후처리 설명(trimmed mean 10%, 95th percentile, 4th-order)은 processSubjectDate와 맞춰야 한다.
+fid = fopen(fullfile(paths.emgStepsDir, trials(1).key, 'step1.csv'), 'r');
+lpfHz = sscanf(fgetl(fid), 'emg_lpf_hz = %f');
+fclose(fid);
+headerLines = {
+    'GaitCycle_afo = affected-side gait cycle (%) reconstructed from AFO sync (gaitCycle ticks)'
+    'GaitCycle_MW_R/L = gait cycle (%) copied from MW data (nearest MW sample)'
+    sprintf(['EMG = %g Hz low-pass filtered. Processing: offset removal (10%% trimmed mean per sensor ' ...
+        'pooled over all trials of the date) -> rectification -> normalization to the 95th percentile ' ...
+        'per sensor pooled over the date -> 4th-order zero-phase Butterworth low-pass (padded with ' ...
+        'neighboring steps)'], lpfHz)
+    'Hip = flexion + (deg)'
+    'Knee = flexion + (deg)'
+    'Ankle = plantarflexion + (deg)'
+    'BWS = body weight support (%)'};
 syncRows = struct('Trial', {}, 'MWFile', {}, 'TrainTicks', {}, 'MWEvents', {}, 'Matched', {}, ...
     'ShiftCycles', {}, 'EndGap_s', {}, 'ClockLag_s', {}, 'ResidualSD_s', {}, ...
     'Steps', {}, 'StepsMissingMW', {}, 'GaitCycleDiff_pct', {});
@@ -79,13 +101,27 @@ for i = 1:numel(trials)
         gcL = nan(height(T), 1);
         gcL(has) = mw.p_leftCurrentGaitCycleRate(nearIdx);
 
+        % EMG는 LPF 컬럼만 남기고 이름에서 _lpf를 뺀다. 각도는 left/right_ -> L/R_.
+        varNames = T.Properties.VariableNames;
+        lpfCols = varNames(endsWith(varNames, '_lpf'));
+        T = removevars(T, erase(lpfCols, '_lpf'));
+        T = renamevars(T, lpfCols, erase(lpfCols, '_lpf'));
+        T.Properties.VariableNames = regexprep(T.Properties.VariableNames, {'^left_', '^right_'}, {'L_', 'R_'});
+
         T = renamevars(T, 'GaitCycle', 'GaitCycle_afo');
         T = addvars(T, mwTime, 'After', 'AFOTime', 'NewVariableNames', 'MWTime');
         T = addvars(T, gcR, gcL, 'After', 'GaitCycle_afo', ...
             'NewVariableNames', {'GaitCycle_MW_R', 'GaitCycle_MW_L'});
         T = [T, array2table(interp1(mwAFOTime, mwVals, T.AFOTime, 'linear'), ...
             'VariableNames', mwNames)];
-        writetable(T, fullfile(trialDir, sprintf('step%d.csv', c)));
+
+        % 메타데이터 + endheader + 컬럼 이름을 먼저 쓰고, 데이터는 writetable로 이어 쓴다
+        % (writetable과 같은 CRLF 줄바꿈).
+        outPath = fullfile(trialDir, sprintf('step%d.csv', c));
+        fid = fopen(outPath, 'w');
+        fprintf(fid, '%s\r\n', headerLines{:}, 'endheader', strjoin(T.Properties.VariableNames, ','));
+        fclose(fid);
+        writetable(T, outPath, 'WriteMode', 'append', 'WriteVariableNames', false);
 
         nMissing = nMissing + any(~has);
         d = mod(affectedRate(nearIdx) - T.GaitCycle_afo(has) + 50, 100) - 50;  % 순환 차이
