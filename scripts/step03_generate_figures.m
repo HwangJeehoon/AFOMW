@@ -24,7 +24,7 @@ for i = 1:numel(cfg.figureTargets)
     end
 
     if needsEmg
-        trials = loadTrials(target, trialKeys, false, cfg.rootDir);
+        trials = loadTrials(target, trialKeys, @loadTrialSteps, cfg.rootDir);
 
         if opts.rmsBar
             plotRMSBarByMuscle(target.subject, target.dateStr, trials, cfg.muscleNames, ...
@@ -65,7 +65,7 @@ for i = 1:numel(cfg.figureTargets)
                 '%s/%s의 emg_afo_steps가 없습니다. 02_process_afo_merge를 먼저 실행하세요.', ...
                 target.subject, target.dateStr);
         end
-        mergedTrials = loadTrials(target, trialKeys, true, cfg.rootDir);
+        mergedTrials = loadTrials(target, trialKeys, @loadTrialStepsMerged, cfg.rootDir);
         if opts.rawEMGWithAngle
             plotRawEMGWithAngle(target.subject, target.dateStr, mergedTrials, cfg.muscleNames, ...
                 cfg.sideNames, cfg.muscleFullNames, outDir, target.affectedSide, opts.lpfCutoffHz);
@@ -80,22 +80,28 @@ for i = 1:numel(cfg.figureTargets)
         end
     end
 
+    if opts.bilateralProfile
+        if ~isfolder(paths.emgAfoMwStepsDir)
+            error('generate_figures:missingMWSteps', ...
+                '%s/%s의 emg_afo_mw_steps가 없습니다. 02b_process_mw_merge를 먼저 실행하세요.', ...
+                target.subject, target.dateStr);
+        end
+        mwTrials = loadTrials(target, trialKeys, @loadTrialStepsMW, cfg.rootDir);
+        plotGaitCycleProfileBilateral(target.subject, target.dateStr, mwTrials, cfg.sideNames, ...
+            cfg.muscleFullNames, outDir, target.affectedSide, opts.profileStd);
+    end
+
     fprintf('=== figure generation complete: %s ===\n', outDir);
 end
 end
 
-function trials = loadTrials(target, trialKeys, useMerged, rootDir)
+function trials = loadTrials(target, trialKeys, loader, rootDir)
+% loader : @loadTrialSteps / @loadTrialStepsMerged / @loadTrialStepsMW
 trials = struct('name', {}, 'steps', {}, 'tables', {});
 for k = 1:numel(trialKeys)
     key = trialKeys{k};
     trials(k).name = key;
     trials(k).steps = target.stepRange.(key);
-    if useMerged
-        trials(k).tables = loadTrialStepsMerged(target.subject, target.dateStr, key, ...
-            trials(k).steps, rootDir);
-    else
-        trials(k).tables = loadTrialSteps(target.subject, target.dateStr, key, ...
-            trials(k).steps, rootDir);
-    end
+    trials(k).tables = loader(target.subject, target.dateStr, key, trials(k).steps, rootDir);
 end
 end
