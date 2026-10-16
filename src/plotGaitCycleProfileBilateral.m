@@ -6,7 +6,7 @@ function plotGaitCycleProfileBilateral(subject, dateStr, trials, sideNames, musc
 %   emg_afo_mw_steps의 EMG는 이미 LPF된 값이라 별도 필터 없이 step별로 공통 grid에
 %   보간해 평균만 낸다.
 %   trials(k).tables는 loadTrialStepsMW로 읽은 테이블이어야 한다.
-%   신호 하나당 png 1장 -> outDir/Profile_bilateral/Profile_{signal}.png
+%   신호 하나당 png 1장 -> outDir/Profile_bilateral/{EMG_TA, ..., Angle_hip, ..., vGRF, CoP}.png
 
 if nargin < 8
     showStdBand = false;
@@ -24,16 +24,16 @@ end
 lineStyles = {'-', '--'};
 roleNames = {'Affected', 'Unaffected'};
 
-% {컬럼 이름(L_/R_ 뒤), 제목, y축 이름, y축 범위}
+% {컬럼 이름(L_/R_ 뒤), 제목, y축 이름, y축 범위, png 파일 이름}
 muscles = fieldnames(muscleFullNames);
 signals = [
     muscles, struct2cell(muscleFullNames), ...
-        repmat({'Normalized Muscle Activation', [-0.2 2]}, numel(muscles), 1)
-    {'hip_angle',   'Hip Angle',   'Hip Angle (deg)',           [-20 60]
-     'knee_angle',  'Knee Angle',  'Knee Angle (deg)',          [-30 80]
-     'ankle_angle', 'Ankle Angle', 'Ankle Angle (deg)',         [-30 30]
-     'vGRF',        'vGRF',        'vGRF',                      [-20 100]
-     'CoP',         'CoP',         'CoP (0 = rear, 1 = front)', [0 1]}];
+        repmat({'Normalized Muscle Activation', [-0.2 2]}, numel(muscles), 1), strcat('EMG_', muscles)
+    {'hip_angle',   'Hip Angle',   'Hip Angle (deg)',           [-20 60],  'Angle_hip'
+     'knee_angle',  'Knee Angle',  'Knee Angle (deg)',          [-30 80],  'Angle_knee'
+     'ankle_angle', 'Ankle Angle', 'Ankle Angle (deg)',         [-30 30],  'Angle_ankle'
+     'vGRF',        'vGRF',        'vGRF',                      [-20 100], 'vGRF'
+     'CoP',         'CoP',         'CoP (0 = rear, 1 = front)', [0 1],     'CoP'}];
 
 profileOutDir = fullfile(outDir, 'Profile_bilateral');
 if ~exist(profileOutDir, 'dir')
@@ -41,7 +41,7 @@ if ~exist(profileOutDir, 'dir')
 end
 
 for g = 1:size(signals, 1)
-    [base, titleName, yLabelStr, yLimits] = signals{g, :};
+    [base, titleName, yLabelStr, yLimits, fileName] = signals{g, :};
 
     f = figure('Color', 'w', 'Position', [0 0 1200 800]);
     hold on;
@@ -75,7 +75,7 @@ for g = 1:size(signals, 1)
     title(sprintf('%s(%s) - %s', subject, dateStr, titleName), 'FontSize', 30);
     legend(legendNames, 'FontSize', 16, 'NumColumns', 2, 'Location', 'best');
 
-    saveas(f, fullfile(profileOutDir, sprintf('Profile_%s.png', base)));
+    saveas(f, fullfile(profileOutDir, [fileName '.png']));
     close(f);
 end
 end
