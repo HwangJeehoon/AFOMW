@@ -28,6 +28,12 @@ cfg.targets = struct( ...
     'affectedSide', {'L', 'L', 'L', 'L', 'R', 'R', 'R'}, ...
     'enabled', {true, true, true, true, true, true, true});
 
+% 관절각 영점 (step02에서 적용). 바꾸면 step02 -> step02b -> step03을 다시 돌린다.
+%   'stand'         : 마지막 /afo_gui/kinematics_zero 메시지 시점의 자세
+%   'revised_stand' : MW 기록 시작 직전 마지막 정지 구간(0.5 s, 관절 변화 < 2.5도)의 평균 자세
+%                     (scripts/diagnostics/inspect_kinematics_zero.m의 revised_stand와 같은 값)
+cfg.angleZeroing = 'revised_stand';
+
 % 검증된 step 범위가 있는 날짜만 figureTargets에 둔다.
 cfg.figureTargets = struct('subject', {}, 'dateStr', {}, 'affectedSide', {}, 'stepRange', {});
 cfg.figureTargets(1) = makeFigureTarget('SAH01', '260706', 'L', 3:73, 18:88, 7:77, 5:75);

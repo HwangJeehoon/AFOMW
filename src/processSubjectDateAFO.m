@@ -1,10 +1,14 @@
-function processSubjectDateAFO(subject, dateStr, pct, rootDir, trials)
+function processSubjectDateAFO(subject, dateStr, pct, rootDir, trials, affectedSide, angleZeroing)
 % PROCESSSUBJECTDATEAFO  한 subject/날짜에 대해 bare/P1/P2/P3 4개 trial의 AFO
 % .bag에서 좌우 무릎/발목 상대각을 계산해 EMG와 같은 gait cycle 경계로 자른다.
 % 이어서 이미 만들어져 있는 Subject/날짜/processed/emg_steps/{bare,p1,p2,p3}/의 step csv들을
 % 읽어, 각 행의 AFOTime에 맞춰 4개 관절각 컬럼을 보간·추가한 뒤
 % Subject/날짜/processed/emg_afo_steps/{bare,p1,p2,p3}/에 저장한다.
-%   pct : [start mid end] gait cycle % 경계 (subject별로 다름, run_EMG_processing.m과 동일)
+%   pct          : [start mid end] gait cycle % 경계 (subject별로 다름, run_EMG_processing.m과 동일)
+%   affectedSide : 'L' 또는 'R' (revised_stand일 때 MW를 gait cycle tick으로 싱크하는 데 쓴다)
+%   angleZeroing : 'stand'(기본, 마지막 kinematics_zero 메시지 시점) 또는 'revised_stand'
+%                  (raw/mw로 MW 기록 시작 시각을 구해 그 직전 정지 구간을 관절각 영점으로 씀,
+%                  computeAFOJointAngles 참고)
 
 if nargin < 4
     rootDir = pwd;
@@ -14,8 +18,12 @@ if nargin < 5 || isempty(trials)
         'key',        {'bare', 'p1', 'p2', 'p3'}, ...
         'bagFile',    {'bare.bag', 'p1.bag', 'p2.bag', 'p3.bag'}, ...
         'emgFile',    {'bare.csv', 'P1.csv', 'P2.csv', 'P3.csv'}, ...
+        'mwFile',     {'BARE.csv', 'P1.csv', 'P2.csv', 'P3.csv'}, ...
         'gaitSuffix', {'BARE', 'p1', 'p2', 'p3'}, ...
         'label',      {'bare', 'P1', 'P2', 'P3'});
+end
+if nargin < 7 || isempty(angleZeroing)
+    angleZeroing = 'stand';
 end
 
 paths = getSubjectDatePaths(rootDir, subject, dateStr);
@@ -37,7 +45,8 @@ if ~exist(mergedOutDir, 'dir')
     mkdir(mergedOutDir);
 end
 calibrationRows = struct('Trial', {}, 'Joint', {}, 'Method', {}, 'GroundTime', {}, 'StandTime', {}, ...
-    'FunctionalStartTime', {}, 'FunctionalEndTime', {});
+    'FunctionalStartTime', {}, 'FunctionalEndTime', {}, 'Zeroing', {}, 'ZeroStartTime', {}, ...
+    'ZeroEndTime', {});
 
 for i = 1:numel(trials)
     tr = trials(i);
@@ -55,8 +64,25 @@ for i = 1:numel(trials)
     end
     functionalTimeRange = [windows(1).startRel, windows(end).endRel] + trigger;
 
-    fprintf('  [%s/%s] computing AFO angles for trial %s ...\n', subject, dateStr, tr.label);
-    [angleTable, calibration] = computeAFOJointAngles(bagPath, functionalTimeRange);
+    switch angleZeroing
+        case 'stand'
+            mwStartTime = [];
+        case 'revised_stand'
+            mw = readMWCsv(fullfile(paths.mwRawDir, tr.mwFile));
+            mwAFOTime = syncMWToGaitCycle(mw, gaitPath, pct, affectedSide, trigger);
+            mwStartTime = mwAFOTime(1);
+        otherwise
+            error('processSubjectDateAFO:unknownZeroing', ...
+                'angleZeroing은 ''stand'' 또는 ''revised_stand''여야 합니다: %s', angleZeroing);
+    end
+
+    fprintf('  [%s/%s] computing AFO angles for trial %s (zeroing: %s) ...\n', ...
+        subject, dateStr, tr.label, angleZeroing);
+    [angleTable, calibration] = computeAFOJointAngles(bagPath, functionalTimeRange, mwStartTime);
+    if ~isempty(mwStartTime)
+        fprintf('    -> revised stand zero window %.1f-%.1f s before MW start\n', ...
+            mwStartTime - calibration.zeroStartTime, mwStartTime - calibration.zeroEndTime);
+    end
     cycleTables = cutAngleCycles(angleTable, gaitPath, trigger, pct, hdr.collectionLength);
     fprintf('    -> %d gait cycles extracted\n', numel(cycleTables));
 
@@ -83,7 +109,8 @@ for i = 1:numel(trials)
             'Trial', tr.label, 'Joint', joint.name, 'Method', calibration.method, ...
             'GroundTime', calibration.groundTime, 'StandTime', calibration.standTime, ...
             'FunctionalStartTime', calibration.functionalStartTime, ...
-            'FunctionalEndTime', calibration.functionalEndTime); %#ok<AGROW>
+            'FunctionalEndTime', calibration.functionalEndTime, 'Zeroing', calibration.zeroing, ...
+            'ZeroStartTime', calibration.zeroStartTime, 'ZeroEndTime', calibration.zeroEndTime); %#ok<AGROW>
     end
 end
 

@@ -1,4 +1,4 @@
-function [angleTable, calibration] = computeAFOJointAngles(bagPath, functionalTimeRange)
+function [angleTable, calibration] = computeAFOJointAngles(bagPath, functionalTimeRange, mwStartTime)
 % COMPUTEAFOJOINTANGLES  AFO .bag 하나에서 좌우 고관절/무릎/발목 sagittal 각도(트라이얼
 % 전체, IMU 원 샘플레이트)를 계산한다.
 %
@@ -28,6 +28,11 @@ function [angleTable, calibration] = computeAFOJointAngles(bagPath, functionalTi
 %          ankle= IMU_2/5(정강이) -> IMU_3/6(발),      plantarflexion이 양수 (+1)
 %        부호는 중력 기반 독립 추정과 28개 trial에서 비교해 검증했고, 모든 trial에서
 %        같은 부호가 나왔다.
+%     4) mwStartTime(MW 기록 시작의 AFO epoch 시각)을 주면 3)의 stand zeroing 대신
+%        revised stand zeroing을 쓴다: mwStartTime 이전 마지막 정지 구간(findStillWindow)
+%        의 관절별 평균을 뺀다. stand zeroing 메시지가 holder 상태나 직립이 아닌 자세에서
+%        찍힌 trial이 있어서, 로봇이 움직이기 직전 자세로 영점을 다시 잡는 것이다.
+%        정지 구간을 못 찾으면 에러를 낸다.
 %
 %   센서 간 정렬(holder에서의 상대 자세)을 쓰지 않으므로, 센서 사이에 heading/twist
 %   오차가 있어도 영향이 없다. 이전 방식(센서 pair의 상대 quaternion을 투영, src/legacy/
@@ -41,6 +46,9 @@ function [angleTable, calibration] = computeAFOJointAngles(bagPath, functionalTi
 
 if nargin < 2
     functionalTimeRange = [];
+end
+if nargin < 3
+    mwStartTime = [];
 end
 
 pairs = [0 1; 1 2; 2 3; 0 4; 4 5; 5 6];  % [근위 원위]
@@ -88,7 +96,7 @@ for id = sensorIds
     theta.(name) = holderXRotation(qRelative.(name));
 end
 
-angleCols = zeros(numel(afoTime), numel(jointNames));
+jointDeg = zeros(numel(afoTime), numel(jointNames));
 calibration = struct();
 calibration.method = 'per_sensor_holder_x_rotation';
 calibration.groundTime = zeroingTimeGlobal;
@@ -100,11 +108,28 @@ calibration.joints = struct('name', {});
 for k = 1:size(pairs, 1)
     nameProximal = sprintf('IMU_%d', pairs(k, 1));
     nameDistal = sprintf('IMU_%d', pairs(k, 2));
-    jointDeg = theta.(nameDistal) - theta.(nameProximal);
-    angleCols(:, k) = signMultiplier(k) * (jointDeg - jointDeg(idxZero));  % stand 시점 값을 offset으로 보정
+    jointDeg(:, k) = signMultiplier(k) * (theta.(nameDistal) - theta.(nameProximal));
 
     calibration.joints(k) = struct('name', jointNames{k});
 end
+
+% 관절각 영점: stand zeroing 시점 값, 또는 MW 시작 전 마지막 정지 구간 평균(revised)
+if isempty(mwStartTime)
+    zeroOffset = jointDeg(idxZero, :);
+    calibration.zeroing = 'stand';
+    calibration.zeroStartTime = zeroingTimeStand;
+    calibration.zeroEndTime = zeroingTimeStand;
+else
+    [zeroStart, zeroEnd, zeroOffset] = findStillWindow(afoTime, jointDeg, mwStartTime);
+    if isnan(zeroStart)
+        error('computeAFOJointAngles:noStillWindow', ...
+            'No still window found before MW start for revised stand zeroing: %s', bagPath);
+    end
+    calibration.zeroing = 'revised_stand';
+    calibration.zeroStartTime = zeroStart;
+    calibration.zeroEndTime = zeroEnd;
+end
+angleCols = jointDeg - zeroOffset;
 
 angleTable = array2table([afoTime, angleCols], 'VariableNames', [{'AFOTime'}, jointNames]);
 angleTable.Properties.UserData = calibration;

@@ -13,7 +13,8 @@ targets = cfg.targets([cfg.targets.enabled]);
 
 for i = 1:numel(targets)
     target = targets(i);
-    processSubjectDateAFO(target.subject, target.dateStr, target.gaitPct, cfg.rootDir, cfg.trials);
+    processSubjectDateAFO(target.subject, target.dateStr, target.gaitPct, cfg.rootDir, cfg.trials, ...
+        target.affectedSide, cfg.angleZeroing);
 end
 
 fprintf('\n=== AFO merge processing complete ===\n');
